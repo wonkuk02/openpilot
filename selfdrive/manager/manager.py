@@ -76,6 +76,7 @@ def manager_init():
     ("CoastingDL", "0"),
     ("RegenBraking", "0"),
     ("OnePedalMode", "0"),
+    ("OnePedalModeSimple", "0"),
     ("OnePedalDLCoasting", "0"),
     ("OnePedalModeEngageOnGas", "0"),
     ("OnePedalDLEngageOnGas", "0"),
@@ -87,21 +88,25 @@ def manager_init():
     ("CoastingBrakeOverSpeed", "0"),
     ("FrictionBrakePercent", "0"),
     ("BrakeIndicator", "1"),
+    ("PowerMeterMode", "0"),
+    ("PowerMeterMetric", "1"),
     ("PrintLeadInfo", "1"),
+    ("PrintAdjacentLeadSpeeds", "1"),
+    ("AdjacentPaths", "1"),
     ("DisableOnroadUploads", "0"),
     ("LowOverheadMode", "0"),
     ("FPVolt", "0"),
     ("MeasureConfigNum", "0"),
-    ("MeasureSlot00", "51"), # CPU점유율과 온도 °C
+    ("MeasureSlot00", "61"), # CPU점유율과 온도 °C
     ("MeasureSlot01", "1"), # 핸들:경로 비교각
     ("MeasureSlot02", "5"), # 엔진RPM + 온도
     ("MeasureSlot03", "7"), # 냉각수온도
-    ("MeasureSlot04", "64"), # GPS정확도,위성수
-    ("MeasureSlot05", "27"), # 차선폭
+    ("MeasureSlot04", "74"), # GPS정확도,위성수
+    ("MeasureSlot05", "37"), # 차선폭
     ("MeasureSlot06", "10"), # 횡가속도
-    ("MeasureSlot07", "21"), # 고도
-    ("MeasureSlot08", "22"), # 위도
-    ("MeasureSlot09", "33"), # 차간거리, 안전거리
+    ("MeasureSlot07", "31"), # 고도
+    ("MeasureSlot08", "32"), # 위도
+    ("MeasureSlot09", "43"), # 차간거리, 안전거리
   ]
   if not PC:
     default_params.append(("LastUpdateTime", datetime.datetime.utcnow().isoformat().encode('utf8')))

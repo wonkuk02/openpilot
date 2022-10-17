@@ -3,7 +3,7 @@ import importlib
 import math
 import numpy as np
 from collections import defaultdict, deque
-
+from common.filter_simple import FirstOrderFilter
 import cereal.messaging as messaging
 from cereal import car
 from common.numpy_fast import interp
@@ -16,10 +16,12 @@ from selfdrive.controls.lib.radar_helpers import Cluster, Track
 from selfdrive.swaglog import cloudlog
 from selfdrive.hardware import TICI
 
-LEAD_PATH_YREL_MAX_BP = [100., 200.] # [m] distance to lead
-LEAD_PATH_YREL_MAX_V = [0.5, 1.5] # [m] an increasing tolerance for farther leads 
-LEAD_PATH_DREL_MIN = 110 # [m] only care about far away leads
-MIN_LANE_PROB = 0.6  # Minimum lanes probability to allow curvature prediction based on lanes.
+LEAD_PATH_YREL_MAX_BP = [0.] # [m] distance to lead
+LEAD_PATH_YREL_MAX_V = [1.2] # [m] constant tolerance
+LEAD_PATH_YREL_LOW_TOL = 0.5 # if the lead closest to the "middle" is farther away than one that is both closer and within this distance of "middle", use that lead
+LEAD_PATH_DREL_MIN = 60 # [m] only care about far away leads
+LEAD_MIN_SMOOTHING_DISTANCE = 145 # [m]
+MIN_LANE_PROB = 0.6  # Minimum lanes probability to allow use.
 
 class KalmanParams():
   def __init__(self, dt):
@@ -74,16 +76,22 @@ def match_model_path_to_cluster(v_ego, md, clusters):
   # 1) closer than the farthest model predicted distance
   # 2) at least near the edge of regular op lead detectability
   # 3) close enough to the predicted path at the cluster distance
-  close_path_clusters = [c for c in clusters if \
+  close_path_clusters = [[c,abs(-c.yRel - interp(c.dRel, md.position.x, md.position.y))] for c in clusters if \
       c.dRel <= md.position.x[-1] and \
-      c.dRel >= LEAD_PATH_DREL_MIN and \
-      abs(-c.yRel - interp(c.dRel, md.position.x, md.position.y)) \
-        <= interp(c.dRel, LEAD_PATH_YREL_MAX_BP, LEAD_PATH_YREL_MAX_V)]
+      c.dRel >= LEAD_PATH_DREL_MIN]
+  close_path_clusters = sorted([c for c in close_path_clusters if c[1] <= interp(c[0].dRel, LEAD_PATH_YREL_MAX_BP, LEAD_PATH_YREL_MAX_V)], key=lambda c:c[1])
   if len(close_path_clusters) == 0:
     return None
 
-  # only care about the closest lead on our path
-  cluster = min(close_path_clusters, key=lambda x: x.dRel)
+  # take the lead that's closest to the "middle"
+  cluster = close_path_clusters[0]
+  for c in close_path_clusters[1:]:
+    if c[1] <= LEAD_PATH_YREL_LOW_TOL:
+      if c[0].dRel < cluster[0].dRel:
+        cluster = c
+    else:
+      break
+  cluster = cluster[0]
 
   # if no 'sane' match is found return None
   # model path gets shorter when you brake, so can't use this for very slow leads
@@ -138,25 +146,111 @@ def match_model_lanelines_to_cluster(v_ego, md, lane_width, clusters):
   # take clusters that are
   # 1) closer than the farthest model predicted distance
   # 2) at least near the edge of regular op lead detectability
-  # 3) close enough to the predicted path at the cluster distance
-  close_path_clusters = [c for c in clusters if \
+  # 3) close enough to the predicted path at the cluster distance  
+  close_path_clusters = [[c,abs(-c.yRel - interp(c.dRel, ll_x, c_y.tolist()))] for c in clusters if \
       c.dRel <= ll_x[-1] and \
-      c.dRel >= LEAD_PATH_DREL_MIN and \
-      abs(-c.yRel - interp(c.dRel, ll_x, c_y.tolist())) \
-        <= interp(c.dRel, LEAD_PATH_YREL_MAX_BP, LEAD_PATH_YREL_MAX_V)]
+      c.dRel >= LEAD_PATH_DREL_MIN]
+  close_path_clusters = sorted([c for c in close_path_clusters if c[1] <= interp(c[0].dRel, LEAD_PATH_YREL_MAX_BP, LEAD_PATH_YREL_MAX_V)], key=lambda c:c[1])
   if len(close_path_clusters) == 0:
     return None
 
-  # only care about the closest lead on our path
-  cluster = min(close_path_clusters, key=lambda x: x.dRel)
+  # take the lead that's closest to the "middle"
+  cluster = close_path_clusters[0]
+  for c in close_path_clusters[1:]:
+    if c[1] <= LEAD_PATH_YREL_LOW_TOL:
+      if c[0].dRel < cluster[0].dRel:
+        cluster = c
+    else:
+      break
+  cluster = cluster[0]
 
   # if no 'sane' match is found return None
-  # model path gets shorter when you brake, so can't use this for very slow leads
   vel_sane = (v_ego + cluster.vRel > -0.5)
   if vel_sane:
     return cluster
   else:
     return None
+
+
+def get_path_adjacent_clusters(v_ego, md, lane_width, clusters):
+  if len(clusters) == 0:
+    return [[],[],[]]
+  
+  if md is not None and lane_width > 0. and len(md.laneLines) == 4 and len(md.laneLines[1].x) == TRAJECTORY_SIZE:
+    # get centerline approximation using one or both lanelines
+    ll_x = md.laneLines[1].x  # left and right ll x is the same
+    lll_y = np.array(md.laneLines[1].y)
+    rll_y = np.array(md.laneLines[2].y)
+    l_prob = md.laneLineProbs[1]
+    r_prob = md.laneLineProbs[2]
+    lll_std = md.laneLineStds[1]
+    rll_std = md.laneLineStds[2]
+
+    if l_prob > MIN_LANE_PROB and r_prob > MIN_LANE_PROB:
+      # Reduce reliance on lanelines that are too far apart or will be in a few seconds
+      width_pts = rll_y - lll_y
+      prob_mods = []
+      for t_check in [0.0, 1.5, 3.0]:
+        width_at_t = interp(t_check * (v_ego + 7), ll_x, width_pts)
+        prob_mods.append(interp(width_at_t, [4.0, 5.0], [1.0, 0.0]))
+      mod = min(prob_mods)
+      l_prob *= mod
+      r_prob *= mod
+
+      # Reduce reliance on uncertain lanelines
+      l_std_mod = interp(lll_std, [.15, .3], [1.0, 0.0])
+      r_std_mod = interp(rll_std, [.15, .3], [1.0, 0.0])
+      l_prob *= l_std_mod
+      r_prob *= r_std_mod
+
+    # Find path from lanes as the average center lane only if min probability on both lanes is above threshold.
+    if l_prob > MIN_LANE_PROB and r_prob > MIN_LANE_PROB:
+      c_y = (lll_y + rll_y) / 2.
+    elif l_prob > MIN_LANE_PROB:
+      c_y = lll_y + (lane_width / 2)
+    elif r_prob > MIN_LANE_PROB:
+      c_y = rll_y - (lane_width / 2)
+    else:
+      c_y = None
+  else:
+    c_y = None
+  
+  if md is not None or len(md.position.x) == TRAJECTORY_SIZE or md.position.x[-1] > LEAD_PATH_DREL_MIN:
+    md_y = md.position.y
+    md_x = md.position.x
+  else:
+    md_y = None
+  
+  leads_left = {}
+  leads_center = {}
+  leads_right = {}
+  half_lane_width = lane_width / 2
+  for c in clusters:
+    if md_y is not None and c.dRel <= md_x[-1] or (c_y is not None and md_x[-1] - c.dRel < ll_x[-1] - c.dRel):
+      yRel = -c.yRel - interp(c.dRel, md_x, md_y)
+      checkSource = 'modelPath'
+    elif c_y is not None:
+      yRel = -c.yRel - interp(c.dRel, ll_x, c_y.tolist())
+      checkSource = 'modelLaneLines'
+    else:
+      yRel = -c.yRel
+      checkSource = 'lowSpeedOverride'
+      
+    source = 'vision' if c.dRel > 145. else 'radar'
+    
+    ld = c.get_RadarState(source=source, checkSource=checkSource)
+    ld["dPath"] = yRel
+    ld["vLat"] = math.sqrt((10*yRel)**2 + c.dRel**2)
+    if abs(yRel) < half_lane_width:
+      leads_center[abs(yRel)] = ld
+    elif yRel < 0.:
+      leads_left[abs(yRel)] = ld
+    else:
+      leads_right[abs(yRel)] = ld
+  
+  ll,lr = [[l[k] for k in sorted(list(l.keys()))] for l in [leads_left,leads_right]]
+  lc = sorted(leads_center.values(), key=lambda c:c["dRel"])
+  return [ll,lc,lr]
 
 
 def get_lead(v_ego, ready, clusters, lead_msg=None, low_speed_override=True, md=None, lane_width=-1.):
@@ -195,6 +289,66 @@ def get_lead(v_ego, ready, clusters, lead_msg=None, low_speed_override=True, md=
 
   return lead_dict
 
+class LongRangeLead():
+  DREL_BP = [LEAD_MIN_SMOOTHING_DISTANCE, 220.] # [m] used commonly between distance-based parameters
+  D_DREL_MAX_V = [1.5, 15.] # [m] deviation between old and new leads necessary to trigger reset of values
+  ALPHA_V = [0, 1.] # raise/lower second value for more/less smoothing of long-range lead data
+  D_YREL_MAX = 0.8 # [m] max yrel deviation
+  
+  def __init__(self, dt):
+    self.dRel = FirstOrderFilter(0., 0., dt, initialized=False)
+    self.vRel = FirstOrderFilter(0., 0., dt, initialized=False)
+    self.vLead = FirstOrderFilter(0., 0., dt, initialized=False)
+    self.vLeadK = FirstOrderFilter(0., 0., dt, initialized=False)
+    self.aLeadK = FirstOrderFilter(0., 0., dt, initialized=False)
+    self.aLeadTau = FirstOrderFilter(0., 0., dt, initialized=False)
+    self.reset()
+  
+  def reset(self):
+    self.lead_last = None
+    self.dRel.initialized=False
+    self.vRel.initialized=False
+    self.vLead.initialized=False
+    self.vLeadK.initialized=False
+    self.aLeadK.initialized=False
+    self.aLeadTau.initialized=False
+  
+  def update(self, lead):
+    if not lead['status']:
+      self.reset()
+    else:
+      if lead['checkSource'] == 'modelLead' or lead['dRel'] < self.DREL_BP[0] or \
+          (self.lead_last is not None and self.lead_last['status'] and \
+          (abs(self.lead_last['dRel'] - lead['dRel']) > interp(lead['dRel'], self.DREL_BP, self.D_DREL_MAX_V) or \
+          abs(self.lead_last['yRel'] - lead['yRel']) > self.D_YREL_MAX)):
+        self.reset()
+      alpha = interp(lead['dRel'], self.DREL_BP, self.ALPHA_V)
+      self.dRel.update_alpha(alpha)
+      self.vRel.update_alpha(alpha)
+      self.vLead.update_alpha(alpha)
+      self.vLeadK.update_alpha(alpha)
+      self.aLeadK.update_alpha(alpha)
+      self.aLeadTau.update_alpha(alpha)
+      self.dRel.update(lead['dRel'])
+      self.vRel.update(lead['vRel'])
+      self.vLead.update(lead['vLead'])
+      self.vLeadK.update(lead['vLeadK'])
+      self.aLeadK.update(lead['aLeadK'])
+      self.aLeadTau.update(lead['aLeadTau'])
+    
+    self.lead_last = lead
+    
+    if lead['status'] and lead['checkSource'] != 'modelLead':
+      lead['dRel'] = self.dRel.x
+      lead['vRel'] = self.vRel.x
+      lead['vLead'] = self.vLead.x
+      lead['vLeadK'] = self.vLeadK.x
+      lead['aLeadK'] = self.aLeadK.x
+      lead['aLeadTau'] = self.aLeadTau.x
+    
+    return lead
+
+  
 
 class RadarD():
   def __init__(self, radar_ts, delay=0):
@@ -212,6 +366,9 @@ class RadarD():
     self.params_check_dur = 5. # [s]
     self.params_check_t = 0.
     self.dt = radar_ts
+    
+    self.lead_one_lr = LongRangeLead(radar_ts)
+    self.lead_two_lr = LongRangeLead(radar_ts)
 
     self.ready = False
 
@@ -289,13 +446,19 @@ class RadarD():
 
     if enable_lead:
       if len(sm['modelV2'].leadsV3) > 1:
-        radarState.leadOne = get_lead(self.v_ego, self.ready, clusters, sm['modelV2'].leadsV3[0], low_speed_override=True, \
-                  md=sm['modelV2'] if self.long_range_leads_enabled else None, lane_width=sm['lateralPlan'].laneWidth if self.long_range_leads_enabled else None)
-        radarState.leadTwo = get_lead(self.v_ego, self.ready, clusters, sm['modelV2'].leadsV3[1], low_speed_override=False, \
-                  md=sm['modelV2'] if self.long_range_leads_enabled else None, lane_width=sm['lateralPlan'].laneWidth if self.long_range_leads_enabled else None)
+        radarState.leadOne = self.lead_one_lr.update(get_lead(self.v_ego, self.ready, clusters, sm['modelV2'].leadsV3[0], low_speed_override=True, \
+                  md=sm['modelV2'] if self.long_range_leads_enabled else None, lane_width=sm['lateralPlan'].laneWidth if self.long_range_leads_enabled else None))
+        radarState.leadTwo = self.lead_two_lr.update(get_lead(self.v_ego, self.ready, clusters, sm['modelV2'].leadsV3[1], low_speed_override=False, \
+                  md=sm['modelV2'] if self.long_range_leads_enabled else None, lane_width=sm['lateralPlan'].laneWidth if self.long_range_leads_enabled else None))
       elif self.long_range_leads_enabled:
-        radarState.leadOne = get_lead(self.v_ego, self.ready, clusters, lead_msg=None, low_speed_override=True, md=sm['modelV2'], lane_width=sm['lateralPlan'].laneWidth)
-        radarState.leadTwo = get_lead(self.v_ego, self.ready, clusters, lead_msg=None, low_speed_override=False, md=sm['modelV2'], lane_width=sm['lateralPlan'].laneWidth)
+        radarState.leadOne = self.lead_one_lr.update(get_lead(self.v_ego, self.ready, clusters, lead_msg=None, low_speed_override=True, md=sm['modelV2'], lane_width=sm['lateralPlan'].laneWidth))
+        radarState.leadTwo = self.lead_two_lr.update(get_lead(self.v_ego, self.ready, clusters, lead_msg=None, low_speed_override=False, md=sm['modelV2'], lane_width=sm['lateralPlan'].laneWidth))
+
+      ll,lc,lr = get_path_adjacent_clusters(self.v_ego, sm['modelV2'], sm['lateralPlan'].laneWidth if self.long_range_leads_enabled else None, clusters)
+      radarState.leadsLeft = list(ll)
+      radarState.leadsCenter = list(lc)
+      radarState.leadsRight = list(lr)
+    
     return dat
 
 

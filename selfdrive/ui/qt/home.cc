@@ -78,7 +78,7 @@ void HomeWindow::mousePressEvent(QMouseEvent* e) {
     Params().putBool("SpeedLimitControl", QUIState::ui_state.scene.speed_limit_control_enabled);
 		return;
   }
-  
+
   // Laneless mode
   touch_rect = QUIState::ui_state.scene.laneless_btn_touch_rect;
   if (QUIState::ui_state.scene.started && !sidebar->isVisible() && QUIState::ui_state.scene.end_to_end && touch_rect.ptInRect(e->x(), e->y())) {
@@ -95,7 +95,7 @@ void HomeWindow::mousePressEvent(QMouseEvent* e) {
     }
     return;
   }
-  
+
   // presses of measure boxes
   for (int ii = 0; ii < QUIState::ui_state.scene.measure_cur_num_slots; ++ii){
     int i = ii;
@@ -107,6 +107,11 @@ void HomeWindow::mousePressEvent(QMouseEvent* e) {
       char slotName[16];
       snprintf(slotName, sizeof(slotName), "MeasureSlot%.2d", i);
       int slot_val = (QUIState::ui_state.scene.measure_slots[i] + 1) % QUIState::ui_state.scene.num_measures;
+      if (!QUIState::ui_state.scene.car_is_ev){
+        while (QUIState::ui_state.scene.EVMeasures.count(static_cast<UIMeasure>(slot_val))){
+          slot_val = (QUIState::ui_state.scene.measure_slots[i]+1) % QUIState::ui_state.scene.num_measures;
+        }
+      }
       QUIState::ui_state.scene.measure_slots[i] = slot_val;
       char val_str[6];
       sprintf(val_str, "%1d", slot_val);
@@ -115,7 +120,7 @@ void HomeWindow::mousePressEvent(QMouseEvent* e) {
       return;
     }
   }
-  
+
   // presses of vehicle speed to increment number of measure boxes
   if (QUIState::ui_state.scene.started 
     && QUIState::ui_state.scene.speed_rect.ptInRect(e->x(), e->y())){
@@ -135,7 +140,7 @@ void HomeWindow::mousePressEvent(QMouseEvent* e) {
     QUIState::ui_state.scene.measures_last_tap_t = QUIState::ui_state.scene.lastTime;
     return;
   }
-  
+
   // presses of wheel to toggle vision/map curve braking
   if (QUIState::ui_state.scene.started 
     && QUIState::ui_state.scene.wheel_touch_rect.ptInRect(e->x(), e->y()))
@@ -158,7 +163,7 @@ void HomeWindow::mousePressEvent(QMouseEvent* e) {
     }
     return;
   }
-  
+
   // presses of maxspeed to toggle coasting
   if (QUIState::ui_state.scene.started 
     && QUIState::ui_state.scene.maxspeed_touch_rect.ptInRect(e->x(), e->y())
@@ -167,7 +172,7 @@ void HomeWindow::mousePressEvent(QMouseEvent* e) {
     Params().putBool("Coasting", !Params().getBool("Coasting"));
     return;
   }
-  
+
   // one-pedal mode button
   if (QUIState::ui_state.scene.started 
     && QUIState::ui_state.scene.one_pedal_touch_rect.ptInRect(e->x(), e->y())
@@ -176,16 +181,29 @@ void HomeWindow::mousePressEvent(QMouseEvent* e) {
     Params().putBool("OnePedalModeEngageOnGas", !Params().getBool("OnePedalModeEngageOnGas"));
     return;
   }
-  
+
   // accel_mode button
   if (QUIState::ui_state.scene.started && QUIState::ui_state.scene.accel_mode_touch_rect.ptInRect(e->x(), e->y())){
     Params().put("AccelMode", std::to_string((std::stoi(Params().get("AccelMode")) + 1) % 3).c_str(), 1);
     return;
   }
-  
+
   // dynamic_follow_mode button
   if (QUIState::ui_state.scene.started && QUIState::ui_state.scene.dynamic_follow_mode_touch_rect.ptInRect(e->x(), e->y())){
     Params().putBool("DynamicFollow", !Params().getBool("DynamicFollow"));
+    return;
+  }
+
+  // power meter text press to change units
+  if (QUIState::ui_state.scene.started && QUIState::ui_state.scene.power_meter_text_rect.ptInRect(e->x(), e->y())){
+    QUIState::ui_state.scene.power_meter_metric = !QUIState::ui_state.scene.power_meter_metric;
+    Params().putBool("PowerMeterMetric", QUIState::ui_state.scene.power_meter_metric);
+    return;
+  }
+  // brake indicator or power meter press
+  if (QUIState::ui_state.scene.started && QUIState::ui_state.scene.brake_touch_rect.ptInRect(e->x(), e->y())){
+    QUIState::ui_state.scene.power_meter_mode = (QUIState::ui_state.scene.power_meter_mode + 1) % 3;
+    Params().put("PowerMeterMode", std::to_string(QUIState::ui_state.scene.power_meter_mode).c_str(), 1);
     return;
   }
   
@@ -205,13 +223,25 @@ void HomeWindow::mousePressEvent(QMouseEvent* e) {
     if (QUIState::ui_state.scene.auto_lane_pos_active){
       QUIState::ui_state.scene.auto_lane_pos_active = false;
       Params().putBool("AutoLanePositionActive", false);
-      QUIState::ui_state.scene.lane_pos = 0;
-      Params().put("LanePosition", "0", 1);
+      if (QUIState::ui_state.scene.lane_pos == -1){
+        // user pressed left button when auto mode was on right position, so enable left position
+        QUIState::ui_state.scene.lane_pos = 1;
+        QUIState::ui_state.scene.lane_pos_timeout_dist = QUIState::ui_state.scene.lane_pos_dist_short;
+        QUIState::ui_state.scene.lane_pos_set_t = QUIState::ui_state.scene.lastTime;
+        QUIState::ui_state.scene.lane_pos_dist_since_set = 0.;
+        Params().put("LanePosition", "1", 1);
+      }
+      else{
+        QUIState::ui_state.scene.lane_pos = 0;
+        Params().put("LanePosition", "0", 1);
+        QUIState::ui_state.scene.lane_pos_set_t = 0;
+      }
     }
     else{
       if (QUIState::ui_state.scene.lane_pos == 1){
         if (QUIState::ui_state.scene.lastTime - QUIState::ui_state.scene.lane_pos_set_t < 2.){
           QUIState::ui_state.scene.lane_pos_timeout_dist = QUIState::ui_state.scene.lane_pos_dist_long;
+          QUIState::ui_state.scene.lane_pos_set_t = 0;
         }
         else{
           QUIState::ui_state.scene.lane_pos = 0;
@@ -224,6 +254,7 @@ void HomeWindow::mousePressEvent(QMouseEvent* e) {
         Params().putBool("AutoLanePositionActive", true);
         QUIState::ui_state.scene.lane_pos = 0;
         Params().put("LanePosition", "0", 1);
+        QUIState::ui_state.scene.lane_pos_set_t = 0;
       }
       else{
         QUIState::ui_state.scene.lane_pos = 1;
@@ -232,20 +263,32 @@ void HomeWindow::mousePressEvent(QMouseEvent* e) {
         QUIState::ui_state.scene.lane_pos_dist_since_set = 0.;
         Params().put("LanePosition", "1", 1);
       }
-      return;
     }
+    return;
   }
   if (QUIState::ui_state.scene.started && QUIState::ui_state.scene.lane_pos_enabled && QUIState::ui_state.scene.lane_pos_right_touch_rect.ptInRect(e->x(), e->y())){
     if (QUIState::ui_state.scene.auto_lane_pos_active){
       QUIState::ui_state.scene.auto_lane_pos_active = false;
       Params().putBool("AutoLanePositionActive", false);
-      QUIState::ui_state.scene.lane_pos = 0;
-      Params().put("LanePosition", "0", 1);
+      if (QUIState::ui_state.scene.lane_pos == 1){
+        // user pressed left button when auto mode was on right position, so enable left position
+        QUIState::ui_state.scene.lane_pos = -1;
+        QUIState::ui_state.scene.lane_pos_timeout_dist = QUIState::ui_state.scene.lane_pos_dist_short;
+        QUIState::ui_state.scene.lane_pos_set_t = QUIState::ui_state.scene.lastTime;
+        QUIState::ui_state.scene.lane_pos_dist_since_set = 0.;
+        Params().put("LanePosition", "-1", 2);
+      }
+      else{
+        QUIState::ui_state.scene.lane_pos = 0;
+        Params().put("LanePosition", "0", 1);
+        QUIState::ui_state.scene.lane_pos_set_t = 0;
+      }
     }
     else{
       if (QUIState::ui_state.scene.lane_pos == -1){
         if (QUIState::ui_state.scene.lastTime - QUIState::ui_state.scene.lane_pos_set_t < 2.){
           QUIState::ui_state.scene.lane_pos_timeout_dist = QUIState::ui_state.scene.lane_pos_dist_long;
+          QUIState::ui_state.scene.lane_pos_set_t = 0;
         }
         else{
           QUIState::ui_state.scene.lane_pos = 0;
@@ -258,6 +301,7 @@ void HomeWindow::mousePressEvent(QMouseEvent* e) {
         Params().putBool("AutoLanePositionActive", true);
         QUIState::ui_state.scene.lane_pos = 0;
         Params().put("LanePosition", "0", 1);
+        QUIState::ui_state.scene.lane_pos_set_t = 0;
       }
       else{
         QUIState::ui_state.scene.lane_pos = -1;
@@ -266,8 +310,8 @@ void HomeWindow::mousePressEvent(QMouseEvent* e) {
         QUIState::ui_state.scene.lane_pos_dist_since_set = 0.;
         Params().put("LanePosition", "-1", 2);
       }
-      return;
     }
+    return;
   }
 
   // if metrics are in edit mode, then don't switch to map or sidebar

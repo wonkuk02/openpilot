@@ -192,6 +192,15 @@ struct CarState {
   drivePower @60 :Float32;
   icePower @61 :Float32;
   observedEVDrivetrainEfficiency @62 :Float32;
+  regenForce @63 :Float32;
+  regenPower @64 :Float32;
+  brakeForce @65 :Float32;
+  brakePower @66 :Float32;
+  evForce @67 :Float32;
+  evPower @68 :Float32;
+  rollingForce @69 :Float32;
+  rollingPower @70 :Float32;
+  pitchPower @71 :Float32;
 
   lateralAcceleration @54 :Float32;
   yawRate2 @55 :Float32;

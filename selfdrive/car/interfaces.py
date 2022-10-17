@@ -97,7 +97,7 @@ class CarInterfaceBase():
     ret.pcmCruise = True     # openpilot's state is tied to the PCM's cruise state on most cars
     ret.minEnableSpeed = -1. # enable is done by stock ACC, so ignore this
     ret.steerRatioRear = 0.  # no rear steering, at least on the listed cars aboveA
-    ret.openpilotLongitudinalControl = True
+    ret.openpilotLongitudinalControl = False
     ret.startAccel = 0.0
     ret.minSpeedCan = 0.3
     ret.stoppingDecelRate = 0.8 # brake_travel/s while trying to stop

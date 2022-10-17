@@ -6,6 +6,7 @@
 #include <string>
 #include <deque>
 #include <vector>
+#include <set>
 
 #include <QObject>
 #include <QTimer>
@@ -52,6 +53,8 @@
 #define CLIP(A,L,H) A < L ? L : (A > H ? H : A)
 
 typedef cereal::CarControl::HUDControl::AudibleAlert AudibleAlert;
+typedef cereal::RadarState::LeadData::Reader LeadData;
+typedef cereal::LateralPlan::LaneTraffic LaneTraffic;
 
 // TODO: this is also hardcoded in common/transformations/camera.py
 // TODO: choose based on frame input size
@@ -165,17 +168,27 @@ typedef enum UIMeasure { //rearrange here to adjust order when cycling measures
   COOLANT_TEMPC,
   COOLANT_TEMPF,
   ACCELERATION,
-  LAT_ACCEL,//JERK,10
+  LAT_ACCEL,//10
   DRAG_FORCE,
   DRAG_POWER,
   DRAG_POWER_HP,
+  DRAG_LOSSES,
   ACCEL_FORCE,
   ACCEL_POWER,
   ACCEL_POWER_HP,
+  EV_FORCE,
+  EV_POWER,
+  EV_POWER_HP, //20
+  REGEN_FORCE,
+  REGEN_POWER,
+  REGEN_POWER_HP,
+  BRAKE_FORCE,
+  BRAKE_POWER,
+  BRAKE_POWER_HP,
   DRIVE_POWER,
   DRIVE_POWER_HP,
   ICE_POWER,
-  ICE_POWER_HP, //20
+  ICE_POWER_HP, //30
   // Location/road info
   ALTITUDE,
   BEARING,
@@ -187,7 +200,7 @@ typedef enum UIMeasure { //rearrange here to adjust order when cycling measures
   DISTANCE_TRAVELLED,
   // Lead info
   FOLLOW_LEVEL,
-  LEAD_TTC, //30
+  LEAD_TTC, //40
   LEAD_DISTANCE_LENGTH,
   LEAD_DISTANCE_TIME,
   LEAD_DESIRED_DISTANCE_LENGTH,
@@ -198,7 +211,7 @@ typedef enum UIMeasure { //rearrange here to adjust order when cycling measures
   // EV info
   HVB_VOLTAGE,
   HVB_CURRENT,
-  HVB_WATTAGE, //40
+  HVB_WATTAGE, //50
   HVB_WATTVOLT,
   EV_EFF_NOW,
   EV_EFF_RECENT,
@@ -209,7 +222,7 @@ typedef enum UIMeasure { //rearrange here to adjust order when cycling measures
   EV_BOTH_NOW,
   EV_OBSERVED_DRIVETRAIN_EFF,
   // Device info
-  CPU_TEMP_AND_PERCENTF, //50
+  CPU_TEMP_AND_PERCENTF, //60
   CPU_TEMP_AND_PERCENTC,
   CPU_TEMPF,
   CPU_TEMPC,
@@ -219,7 +232,7 @@ typedef enum UIMeasure { //rearrange here to adjust order when cycling measures
   AMBIENT_TEMPF,
   AMBIENT_TEMPC,
   FANSPEED_PERCENT,
-  FANSPEED_RPM, //60
+  FANSPEED_RPM, //70
   MEMORY_USAGE_PERCENT,
   FREESPACE_STORAGE,
   DEVICE_BATTERY,
@@ -228,7 +241,7 @@ typedef enum UIMeasure { //rearrange here to adjust order when cycling measures
   VISION_CURLATACCEL,
   VISION_MAXVFORCURCURV,
   VISION_MAXPREDLATACCEL,
-  VISION_VF,
+  VISION_VF, //78
   
   NUM_MEASURES
 } UIMeasure;
@@ -245,7 +258,15 @@ typedef struct UIScene {
 
   bool lead_info_print_enabled;
   std::deque<int> lead_x_vals, lead_y_vals;
+  int lead_x, lead_y;
   int const lead_xy_num_vals = 5;
+
+  bool adjacent_paths_enabled;
+  bool adjacent_lead_info_print_enabled;
+  std::string adjacent_leads_left_str, adjacent_leads_right_str;
+  std::vector<std::string> adjacent_leads_center_strs;
+
+  LaneTraffic traffic_left, traffic_right;
 
   bool is_using_torque_control = false;
 
@@ -274,6 +295,8 @@ typedef struct UIScene {
   Rect wheel_touch_rect;
   bool wheel_rotates = true;
 
+  bool car_is_ev = false;
+
   bool color_path = false;
   
   float screen_dim_modes_v[3] = {0.01, 0.3, 1.};
@@ -289,6 +312,14 @@ typedef struct UIScene {
 
   std::string network_type_string;
   int network_strength;
+
+  std::vector<float> power_cur {0.,0.,0.,0.}, 
+      power_max {75., 100., 100.,  55.}; // [kW] starting upper limits for ICE, EV, brake, and regen power based on volt (volt has 149hp EV output, 101hp motor, a reported 55-60 kW of regen capacity. Brake is based on volt braking at 3.5m/s^2 at 45mph. these go up if more power is observed
+  float power_meter_pow = 0;
+  Rect power_meter_rect, power_meter_text_rect;
+  int power_meter_mode = 0; // 0/1/2 for meter/meter+number/old style brake indicator
+  bool power_meter_metric = true; // true/false for kW/hp power output
+  float power_meter_ema_k = 0.2;
 
   
 // measures
@@ -306,6 +337,26 @@ typedef struct UIScene {
   int measure_row_offset = 0;
   float measures_touch_timeout = 10.;
   float measures_last_tap_t = -measures_touch_timeout;
+  std::set<UIMeasure> EVMeasures = {
+    UIMeasure::EV_FORCE,
+    UIMeasure::EV_POWER,
+    UIMeasure::EV_POWER_HP,
+    UIMeasure::REGEN_FORCE,
+    UIMeasure::REGEN_POWER,
+    UIMeasure::REGEN_POWER_HP,
+    UIMeasure::HVB_VOLTAGE,
+    UIMeasure::HVB_CURRENT,
+    UIMeasure::HVB_WATTAGE,
+    UIMeasure::HVB_WATTVOLT,
+    UIMeasure::EV_EFF_NOW,
+    UIMeasure::EV_EFF_RECENT,
+    UIMeasure::EV_EFF_TRIP,
+    UIMeasure::EV_CONSUM_NOW,
+    UIMeasure::EV_CONSUM_RECENT,
+    UIMeasure::EV_CONSUM_TRIP,
+    UIMeasure::EV_BOTH_NOW,
+    UIMeasure::EV_OBSERVED_DRIVETRAIN_EFF
+  };
   
   Rect speed_rect;
   float road_roll, device_roll;
@@ -386,6 +437,7 @@ typedef struct UIScene {
   Rect laneless_btn_touch_rect;
 
   cereal::DeviceState::Reader deviceState;
+  cereal::RadarState::Reader radarState;
   cereal::RadarState::LeadData::Reader lead_data[2];
   cereal::CarState::Reader car_state;
   cereal::ControlsState::Reader controls_state;
@@ -404,10 +456,14 @@ typedef struct UIScene {
   line_vertices_data lane_line_vertices[4];
   line_vertices_data road_edge_vertices[2];
 
+  line_vertices_data lane_vertices_left, lane_vertices_right;
+
   bool dm_active, engageable;
 
   // lead
   vertex_data lead_vertices[2];
+  std::vector<vertex_data> lead_vertices_oncoming, lead_vertices_ongoing, lead_vertices_stopped;
+  std::vector<float> lead_distances_oncoming, lead_distances_ongoing, lead_distances_stopped;
 
   float light_sensor, accel_sensor, gyro_sensor;
   bool started, ignition, is_metric, longitudinal_control, end_to_end;
