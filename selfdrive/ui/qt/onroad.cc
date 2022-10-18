@@ -765,15 +765,14 @@ void NvgWindow::drawHud(QPainter &p) {
 
   drawLaneLines(p, s);
 
-  if (s->scene.longitudinal_control) {
-    auto leads = sm["modelV2"].getModelV2().getLeadsV3();
-    if (leads[0].getProb() > .5) {
-      drawLead(p, leads[0], s->scene.lead_vertices[0], s->scene.lead_radar[0]);
-    }
-    if (leads[1].getProb() > .5 && (std::abs(leads[1].getX()[0] - leads[0].getX()[0]) > 3.0)) {
-      drawLead(p, leads[1], s->scene.lead_vertices[1], s->scene.lead_radar[1]);
-    }
+  auto leads = sm["modelV2"].getModelV2().getLeadsV3();
+  if (leads[0].getProb() > .5) {
+    drawLead(p, leads[0], s->scene.lead_vertices[0], s->scene.lead_radar[0]);
   }
+  if (leads[1].getProb() > .5 && (std::abs(leads[1].getX()[0] - leads[0].getX()[0]) > 3.0)) {
+    drawLead(p, leads[1], s->scene.lead_vertices[1], s->scene.lead_radar[1]);
+  }
+
   drawMaxSpeed(p);
   drawSpeed(p);
   //drawSpeedLimit(p);
