@@ -169,7 +169,7 @@ static void update_leads(UIState *s, const cereal::ModelDataV2::Reader &model) {
     for (auto const & l : rs){
       vertex_data vd;
       float z = model_position.getZ()[get_path_length_idx(model_position, l.getDRel())];
-      calib_frame_to_full_frame(s, l.getDRel(), -l.getYRel(), z + 2.5, &vd);
+      calib_frame_to_full_frame(s, l.getDRel(), -l.getYRel(), z, &vd);
       if (l.getVLeadK() > 5.){
         s->scene.lead_vertices_ongoing.push_back(vd);
         s->scene.lead_distances_ongoing.push_back(l.getDRel());
@@ -250,8 +250,8 @@ static void update_model(UIState *s, const cereal::ModelDataV2::Reader &model) {
   max_idx = get_path_length_idx(model_position, max_distance);
   update_line_data(s, model_position, scene.end_to_end ? 0.8 : 0.5, 1.32, &scene.track_vertices, max_idx, false);
   max_idx = get_path_length_idx(model_position, MAX_DRAW_DISTANCE);
-  update_line_data(s, model_position, 1., 1.32, &scene.lane_vertices_left, max_idx, false, -scene.lateral_plan.getLaneWidth());
-  update_line_data(s, model_position, 1., 1.32, &scene.lane_vertices_right, max_idx, false, scene.lateral_plan.getLaneWidth());
+  update_line_data(s, model_position, 1., 1.32, &scene.lane_vertices_left, max_idx, false, -scene.lateralPlan.laneWidth * 1.1);
+  update_line_data(s, model_position, 1., 1.32, &scene.lane_vertices_right, max_idx, false, scene.lateralPlan.laneWidth * 1.1);
 }
 
 static void update_sockets(UIState *s) {
@@ -300,6 +300,21 @@ static void update_state(UIState *s) {
         s->scene.ev_recip_eff_wa[1] = std::stof(Params().get("EVConsumption5Mi"));
         s->scene.ev_eff_total_dist = oldDist;
         s->scene.ev_eff_total_kWh = std::stof(Params().get("EVConsumptionTripkWh"));
+      }
+    }
+    if (s->sm->frame - s->scene.started_frame > 100 && s->sm->frame - s->scene.started_frame < 105 && !s->scene.car_is_ev){
+      for (int i = 0; i < s->scene.measure_max_num_slots; ++i){
+        bool metric_is_dup = false;
+        for (int j = 0; j < i && !metric_is_dup; ++j){
+          metric_is_dup = (s->scene.measure_slots[i] == s->scene.measure_slots[j]);
+        }
+        while (metric_is_dup || s->scene.EVMeasures.count(static_cast<UIMeasure>(s->scene.measure_slots[i]))){
+          s->scene.measure_slots[i] = (s->scene.measure_slots[i]+1) % s->scene.num_measures;
+          metric_is_dup = false;
+          for (int j = 0; j < i && !metric_is_dup; ++j){
+            metric_is_dup = (s->scene.measure_slots[i] == s->scene.measure_slots[j]);
+          }
+        }
       }
     }
   }

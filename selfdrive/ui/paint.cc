@@ -322,44 +322,71 @@ static void draw_lead(UIState *s, float d_rel, float v_rel, const vertex_data &v
 static void draw_other_leads(UIState *s) {
   // Draw lead car circle
   if (s->scene.adjacent_lead_info_print_enabled){
-    int r1 = 8, r2 = 90;
+    int r1 = 8, r2 = 75;
     int dr = r2 - r1;
     int i = 0;
     for (auto const & vd : s->scene.lead_vertices_ongoing){
       auto [x, y] = vd;
+      // fade leads too close to the actual lead
+      int alpha_fill = 80;
+      int alpha_stroke = 200;
+      if (lead_drawn){
+        float screen_dist = std::clamp(std::fabs(x - s->scene.lead_x) - 50., 0., 200.);
+        float alpha_factor = 1. - float(screen_dist) / 400.;
+        alpha_fill -= 60. * alpha_factor;
+        alpha_stroke -= 160. * alpha_factor;
+      }
       int r = r2 - int(float(dr) * s->scene.lead_distances_ongoing[i++] / 180.);
       r = (r < r1 ? r1 : r);
       nvgBeginPath(s->vg);
       nvgRoundedRect(s->vg, x - r, y - r, 2 * r, 2 * r, r);
-      nvgFillColor(s->vg, interp_alert_color(-1., 80));
+      nvgFillColor(s->vg, interp_alert_color(-1., alpha_fill));
       nvgFill(s->vg);
-      nvgStrokeColor(s->vg, interp_alert_color(-1., 200));
+      nvgStrokeColor(s->vg, interp_alert_color(-1., alpha_stroke));
       nvgStrokeWidth(s->vg, 6);
       nvgStroke(s->vg);
     }
     i = 0;
     for (auto const & vd : s->scene.lead_vertices_oncoming){
       auto [x, y] = vd;
+      // fade leads too close to the actual lead
+      int alpha_fill = 80;
+      int alpha_stroke = 200;
+      if (lead_drawn){
+        float screen_dist = std::clamp(std::fabs(x - s->scene.lead_x) - 50., 0., 200.);
+        float alpha_factor = 1. - float(screen_dist) / 400.;
+        alpha_fill -= 60. * alpha_factor;
+        alpha_stroke -= 160. * alpha_factor;
+      }
       int r = r2 - int(float(dr) * s->scene.lead_distances_oncoming[i++] / 180.);
       r = (r < r1 ? r1 : r);
       nvgBeginPath(s->vg);
       nvgRoundedRect(s->vg, x - r, y - r, 2 * r, 2 * r, r);
-      nvgFillColor(s->vg, interp_alert_color(1.1, 80));
+      nvgFillColor(s->vg, interp_alert_color(1.1, alpha_fill));
       nvgFill(s->vg);
-      nvgStrokeColor(s->vg, interp_alert_color(1.1, 200));
+      nvgStrokeColor(s->vg, interp_alert_color(1.1, alpha_stroke));
       nvgStrokeWidth(s->vg, 6);
       nvgStroke(s->vg);
     }
     i = 0;
     for (auto const & vd : s->scene.lead_vertices_stopped){
       auto [x, y] = vd;
+      // fade leads too close to the actual lead
+      int alpha_fill = 80;
+      int alpha_stroke = 200;
+      if (lead_drawn){
+        float screen_dist = std::clamp(std::fabs(x - s->scene.lead_x) - 50., 0., 200.);
+        float alpha_factor = 1. - float(screen_dist) / 400.;
+        alpha_fill -= 60. * alpha_factor;
+        alpha_stroke -= 160. * alpha_factor;
+      }
       int r = r2 - int(float(dr) * s->scene.lead_distances_stopped[i++] / 180.);
       r = (r < r1 ? r1 : r);
       nvgBeginPath(s->vg);
       nvgRoundedRect(s->vg, x - r, y - r, 2 * r, 2 * r, r);
-      nvgFillColor(s->vg, COLOR_WHITE_ALPHA(80));
+      nvgFillColor(s->vg, COLOR_WHITE_ALPHA(alpha_fill));
       nvgFill(s->vg);
-      nvgStrokeColor(s->vg, COLOR_WHITE_ALPHA(150));
+      nvgStrokeColor(s->vg, COLOR_WHITE_ALPHA(alpha_stroke));
       nvgStrokeWidth(s->vg, 6);
       nvgStroke(s->vg);
     }
@@ -612,6 +639,7 @@ static void ui_draw_world(UIState *s) {
       }
     }
   }
+  draw_other_leads(s, lead_drawn);
   draw_adjacent_lead_speeds(s, lead_drawn);
   nvgResetScissor(s->vg);
 }
@@ -647,7 +675,7 @@ static void ui_draw_vision_maxspeed(UIState *s) {
       nvgStrokeColor(s->vg, COLOR_WHITE_ALPHA(int(s->scene.one_pedal_fade * 255.)));
       nvgFillColor(s->vg, nvgRGBA(0,0,0,0));
       nvgFill(s->vg);
-      nvgStrokeWidth(s->vg, 6);
+      nvgStrokeWidth(s->vg, 7);
       nvgStroke(s->vg);
     }
   }
@@ -2521,7 +2549,7 @@ static void ui_draw_vision_event(UIState *s) {
       nvgStrokeColor(s->vg, COLOR_WHITE_ALPHA(255));
       nvgFillColor(s->vg, nvgRGBA(0,0,0,0));
       nvgFill(s->vg);
-      nvgStrokeWidth(s->vg, 6);
+      nvgStrokeWidth(s->vg, 7);
       nvgStroke(s->vg);
     }
     else if (s->scene.visionBrakingEnabled and s->scene.mapBrakingEnabled){
@@ -2531,7 +2559,7 @@ static void ui_draw_vision_event(UIState *s) {
       nvgStrokeColor(s->vg, s->scene.network_strength > 0 ? COLOR_GREEN_ALPHA(255) : COLOR_RED_ALPHA(255));
       nvgFillColor(s->vg, nvgRGBA(0,0,0,0));
       nvgFill(s->vg);
-      nvgStrokeWidth(s->vg, 6);
+      nvgStrokeWidth(s->vg, 7);
       nvgStroke(s->vg);
     }
     
@@ -2665,21 +2693,21 @@ static void ui_draw_vision_power_meter(UIState *s) {
         int h_pitch = h_rr + hu * pitch_power / s->scene.power_max[1];
         nvgBeginPath(s->vg);
         nvgRect(s->vg, xi+2, y_mid - h_rr - h_pitch / 2, wi-4, h_pitch);
-        nvgFillColor(s->vg, nvgRGBA(0, 140, 255, inner_fill_alpha));
+        nvgFillColor(s->vg, nvgRGBA(0, 140, 255, inner_fill_alpha/2));
         nvgFill(s->vg);
         nvgStrokeWidth(s->vg, 5);
         nvgStrokeColor(s->vg, COLOR_WHITE_ALPHA(150));
         nvgStroke(s->vg);
         nvgBeginPath(s->vg);
         nvgRect(s->vg, xi+2, y_mid - h_drag - h_rr / 2, wi-4, h_rr);
-        nvgFillColor(s->vg, nvgRGBA(0, 180, 255, inner_fill_alpha));
+        nvgFillColor(s->vg, nvgRGBA(0, 180, 255, inner_fill_alpha/2));
         nvgFill(s->vg);
         nvgStrokeWidth(s->vg, 5);
         nvgStrokeColor(s->vg, COLOR_WHITE_ALPHA(150));
         nvgStroke(s->vg);
         nvgBeginPath(s->vg);
         nvgRect(s->vg, xi+2, y_mid - h_drag / 2, wi-4, h_drag);
-        nvgFillColor(s->vg, nvgRGBA(0, 230, 255, inner_fill_alpha));
+        nvgFillColor(s->vg, nvgRGBA(0, 230, 255, inner_fill_alpha/2));
         nvgFill(s->vg);    
         nvgStrokeWidth(s->vg, 5);
         nvgStrokeColor(s->vg, COLOR_WHITE_ALPHA(150));
@@ -2716,21 +2744,21 @@ static void ui_draw_vision_power_meter(UIState *s) {
         int h_pitch = h_rr + hu * pitch_power / s->scene.power_max[0];
         nvgBeginPath(s->vg);
         nvgRect(s->vg, xi+2, y_mid - h_rr - h_pitch / 2, wi-4, h_pitch);
-        nvgFillColor(s->vg, nvgRGBA(249,240,100,inner_fill_alpha));
+        nvgFillColor(s->vg, nvgRGBA(249,240,100,inner_fill_alpha/2));
         nvgFill(s->vg);
         nvgStrokeWidth(s->vg, 5);
         nvgStrokeColor(s->vg, COLOR_WHITE_ALPHA(150));
         nvgStroke(s->vg);
         nvgBeginPath(s->vg);
         nvgRect(s->vg, xi+2, y_mid - h_drag - h_rr / 2, wi-4, h_rr);
-        nvgFillColor(s->vg, nvgRGBA(249,240,150,inner_fill_alpha));
+        nvgFillColor(s->vg, nvgRGBA(249,240,150,inner_fill_alpha/2));
         nvgFill(s->vg);
         nvgStrokeWidth(s->vg, 5);
         nvgStrokeColor(s->vg, COLOR_WHITE_ALPHA(150));
         nvgStroke(s->vg);
         nvgBeginPath(s->vg);
         nvgRect(s->vg, xi+2, y_mid - h_drag / 2, wi-4, h_drag);
-        nvgFillColor(s->vg, nvgRGBA(249,240,200,inner_fill_alpha));
+        nvgFillColor(s->vg, nvgRGBA(249,240,200,inner_fill_alpha/2));
         nvgFill(s->vg);    
         nvgStrokeWidth(s->vg, 5);
         nvgStrokeColor(s->vg, COLOR_WHITE_ALPHA(150));
@@ -2765,12 +2793,6 @@ static void ui_draw_vision_power_meter(UIState *s) {
     nvgStrokeWidth(s->vg, 5);
     nvgStrokeColor(s->vg, COLOR_WHITE_ALPHA(160));
     nvgStroke(s->vg);
-
-    // middle bar between +/- power
-    nvgBeginPath(s->vg);
-    nvgRect(s->vg, outer_rect.x, y_mid-4, outer_rect.w, 8);
-    nvgFillColor(s->vg, COLOR_WHITE_ALPHA(200));
-    nvgFill(s->vg);
     
     // brake power
     pow_rel = (s->scene.brake_percent >= 51 ? float(s->scene.brake_percent - 51) * 0.02 : 0.);
@@ -2794,9 +2816,15 @@ static void ui_draw_vision_power_meter(UIState *s) {
     nvgFill(s->vg);
     if (pow_rel > 0.){
       nvgStrokeWidth(s->vg, 5);
-      nvgStrokeColor(s->vg, nvgRGBA(255,21,0,200));
+      nvgStrokeColor(s->vg, nvgRGBA(255,21,0,180));
       nvgStroke(s->vg);
     }
+
+    // middle bar between +/- power
+    nvgBeginPath(s->vg);
+    nvgRect(s->vg, outer_rect.x, y_mid-8, outer_rect.w, 16);
+    nvgFillColor(s->vg, COLOR_WHITE_ALPHA(200));
+    nvgFill(s->vg);
 
     pow_rel_max = MAX(pow_rel, pow_rel_max);
 
