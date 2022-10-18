@@ -18,6 +18,12 @@ EventName = car.CarEvent.EventName
 ButtonType = car.CarState.ButtonEvent.Type
 
 
+# meant for traditional ff fits
+def get_steer_feedforward_sigmoid1(angle, speed, ANGLE_COEF, ANGLE_COEF2, ANGLE_OFFSET, SPEED_OFFSET, SIGMOID_COEF_RIGHT, SIGMOID_COEF_LEFT, SPEED_COEF):
+  x = ANGLE_COEF * (angle) / max(0.01,speed)
+  sigmoid = x / (1. + fabs(x))
+  return ((SIGMOID_COEF_RIGHT if angle > 0. else SIGMOID_COEF_LEFT) * sigmoid) * (0.01 + speed + SPEED_OFFSET) ** ANGLE_COEF2 + ANGLE_OFFSET * (angle * SPEED_COEF - atan(angle * SPEED_COEF))
+
 class CarInterface(CarInterfaceBase):
   def __init__(self, CP, CarController, CarState):
     super().__init__(CP, CarController, CarState)
@@ -35,9 +41,14 @@ class CarInterface(CarInterfaceBase):
   # Determined by iteratively plotting and minimizing error for f(angle, speed) = steer.
   @staticmethod
   def get_steer_feedforward_volt(desired_angle, v_ego):
-    desired_angle *= 0.02904609
-    sigmoid = desired_angle / (1 + fabs(desired_angle))
-    return 0.10006696 * sigmoid * (v_ego + 3.12485927)
+    ANGLE_COEF = 1.23514093
+    ANGLE_COEF2 = 2.00000000
+    ANGLE_OFFSET = 0.03891270
+    SPEED_OFFSET = 8.58272983
+    SIGMOID_COEF_RIGHT = 0.00154548
+    SIGMOID_COEF_LEFT = 0.00168327
+    SPEED_COEF = 0.16283995
+    return get_steer_feedforward_sigmoid1(desired_angle, v_ego, ANGLE_COEF, ANGLE_COEF2, ANGLE_OFFSET, SPEED_OFFSET, SIGMOID_COEF_RIGHT, SIGMOID_COEF_LEFT, SPEED_COEF)
 
   @staticmethod
   def get_steer_feedforward_acadia(desired_angle, v_ego):
@@ -191,13 +202,13 @@ class CarInterface(CarInterfaceBase):
     ret.longitudinalTuning.kpV = [4.8, 3.5, 3.0, 1.0, 0.7, 0.5]
     ret.longitudinalTuning.kiBP = [0, 20 * CV.KPH_TO_MS, 30 * CV.KPH_TO_MS, 50 * CV.KPH_TO_MS, 70 * CV.KPH_TO_MS, 120 * CV.KPH_TO_MS]
     ret.longitudinalTuning.kiV = [0.35, 0.53, 0.62, 0.7, 0.5, 0.36]
-    ret.longitudinalActuatorDelayLowerBound = 0.2
-    ret.longitudinalActuatorDelayUpperBound = 0.2
+    ret.longitudinalActuatorDelayLowerBound = 0.42
+    ret.longitudinalActuatorDelayUpperBound = 0.42
     ret.stopAccel = -1.7
     ret.stoppingDecelRate = 3.8
     ret.vEgoStopping = 0.36
     ret.vEgoStarting = 0.35
-    ret.radarTimeStep = 0.0667  # GM radar runs at 15Hz instead of standard 20Hz
+    ret.radarTimeStep = 1/15  # GM radar runs at 15Hz instead of standard 20Hz
 
     return ret
 
