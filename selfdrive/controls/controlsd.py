@@ -526,14 +526,14 @@ class Controls:
 
 
     road_speed_limiter = get_road_speed_limiter()
-    apply_limit_speed, road_limit_speed, left_dist, first_started, log = \
+    apply_limit_speed, road_limit_speed, left_dist, first_started, limit_log = \
       road_speed_limiter.get_max_speed(CS, self.v_cruise_kph)
 
     if apply_limit_speed > 20:
       self.v_cruise_kph_limit = min(apply_limit_speed, self.v_cruise_kph)
 
       if apply_limit_speed < CS.vEgo * CV.MS_TO_KPH:
-        self.events.add(EventName.slowingDownSpeed)
+        self.events.add(EventName.slowingDownSpeedSound)
 
     else:
       self.v_cruise_kph_limit = self.v_cruise_kph
