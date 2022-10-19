@@ -43,7 +43,6 @@ source "$BASEDIR/launch_env.sh"
 if ! $(grep -q "letv" /proc/cmdline); then
   mount -o remount,rw /system
   sed -i -e 's#/dev/input/event1#/dev/input/event2#g' ~/.bash_profile
-  touch /ONEPLUS
   mount -o remount,r /system
 fi
 
@@ -141,6 +140,7 @@ function two_init {
       if [ ! -f "$BASEDIR/prebuilt" ]; then
         # Clean old build products, but preserve the scons cache
         cd $DIR
+        scons --clean
         git clean -xdf
         git submodule foreach --recursive git clean -xdf
       fi
@@ -170,15 +170,10 @@ function tici_init {
     sleep 3
   fi
 
-  # setup governors
   sudo su -c 'echo "performance" > /sys/class/devfreq/soc:qcom,memlat-cpu0/governor'
   sudo su -c 'echo "performance" > /sys/class/devfreq/soc:qcom,memlat-cpu4/governor'
-
-  # TODO: move this to agnos
-  # network manager config
   nmcli connection modify --temporary lte gsm.auto-config yes
   nmcli connection modify --temporary lte gsm.home-only yes
-  sudo rm -f /data/etc/NetworkManager/system-connections/*.nmmeta
 
   # set success flag for current boot slot
   sudo abctl --set_success
